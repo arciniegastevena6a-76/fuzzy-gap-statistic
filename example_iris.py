@@ -11,6 +11,7 @@ from fuzzy_gap_statistic import FuzzyGapStatistic
 
 
 # Default seed found by find_optimal_seed.py that matches paper m̄(∅) = 0.589
+# Seed 108 produces m̄(∅) = 0.5887 (difference from paper: 0.0003)
 DEFAULT_SEED = 108
 
 

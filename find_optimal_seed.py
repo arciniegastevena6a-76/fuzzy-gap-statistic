@@ -10,6 +10,19 @@ import pandas as pd
 from tqdm import tqdm
 
 
+# Paper reference values (from Table 2 and Section 4.1)
+PAPER_TARGET_M_EMPTY = 0.589
+
+# Data split parameters (from paper Section 4.1)
+# Known classes: 40 samples each for training, remaining 10 for testing
+TRAIN_SAMPLES_PER_KNOWN_CLASS = 40
+# Unknown class: 30 samples for testing
+TEST_SAMPLES_UNKNOWN_CLASS = 30
+
+# Search configuration
+MAX_SEARCH_SEEDS = 1000
+
+
 def test_seed(seed, data, target, known_classes, verbose=False):
     """
     测试单个随机种子
@@ -33,10 +46,12 @@ def test_seed(seed, data, target, known_classes, verbose=False):
         np.random.shuffle(cls_indices)
 
         if cls in known_classes:
-            train_indices.extend(cls_indices[:40])
-            test_indices.extend(cls_indices[40:])
+            # Known classes: 40 training, 10 testing (paper Section 4.1)
+            train_indices.extend(cls_indices[:TRAIN_SAMPLES_PER_KNOWN_CLASS])
+            test_indices.extend(cls_indices[TRAIN_SAMPLES_PER_KNOWN_CLASS:])
         else:
-            test_indices.extend(cls_indices[:30])
+            # Unknown class: 30 testing samples (paper Section 4.1)
+            test_indices.extend(cls_indices[:TEST_SAMPLES_UNKNOWN_CLASS])
 
     train_data = data[train_indices]
     train_labels = target[train_indices]
@@ -75,7 +90,7 @@ def test_seed(seed, data, target, known_classes, verbose=False):
         'm_empty_mean': m_empty_mean,
         'tfn_models': tfn_models_extracted,
         'statistics': statistics,
-        'difference_from_paper': abs(m_empty_mean - 0.589)
+        'difference_from_paper': abs(m_empty_mean - PAPER_TARGET_M_EMPTY)
     }
 
 
@@ -83,7 +98,7 @@ def main():
     """主函数：搜索最佳随机种子"""
     print("=" * 70)
     print("Random Seed Search for Iris Experiment")
-    print("Target: m̄(∅) = 0.589 (from paper Table 2)")
+    print(f"Target: m̄(∅) = {PAPER_TARGET_M_EMPTY} (from paper Table 2)")
     print("=" * 70)
 
     # 加载数据
@@ -99,10 +114,10 @@ def main():
     print("\nPaper Reference Values (Table 3):")
     print(f"  Setosa SL:    {paper_tfn_setosa_sl}")
     print(f"  Virginica SL: {paper_tfn_virginica_sl}")
-    print(f"  Target m̄(∅):  0.589\n")
+    print(f"  Target m̄(∅):  {PAPER_TARGET_M_EMPTY}\n")
 
     # 搜索随机种子
-    seed_range = range(0, 1000)  # 搜索0-999
+    seed_range = range(0, MAX_SEARCH_SEEDS)
     results = []
 
     print("Searching for optimal seed...")
@@ -115,7 +130,7 @@ def main():
 
     # 输出Top 10最接近的种子
     print("\n" + "=" * 70)
-    print("Top 10 Seeds Closest to Paper Result (m̄(∅) = 0.589)")
+    print(f"Top 10 Seeds Closest to Paper Result (m̄(∅) = {PAPER_TARGET_M_EMPTY})")
     print("=" * 70)
 
     for i, result in enumerate(results_sorted[:10], 1):
@@ -165,7 +180,7 @@ def main():
     with open('best_tfn_models.txt', 'w', encoding='utf-8') as f:
         f.write(f"Best Random Seed: {best_seed}\n")
         f.write(f"m̄(∅) = {best_result['m_empty_mean']:.4f}\n")
-        f.write(f"Paper target: 0.589\n")
+        f.write(f"Paper target: {PAPER_TARGET_M_EMPTY}\n")
         f.write(f"Difference: {best_result['difference_from_paper']:.4f}\n\n")
         f.write("TFN Models:\n")
         for cls in [0, 2]:
