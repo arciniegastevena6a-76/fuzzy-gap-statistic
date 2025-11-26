@@ -249,7 +249,6 @@ def full_reconstruction_verification(test_data: np.ndarray,
 
 if __name__ == "__main__":
     # Test the verification module
-    import numpy as np
     from sklearn.datasets import load_iris
     from fuzzy_gap_statistic import FuzzyGapStatistic
     

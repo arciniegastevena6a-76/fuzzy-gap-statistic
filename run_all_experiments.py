@@ -27,6 +27,11 @@ warnings.filterwarnings('ignore')
 
 from fuzzy_gap_statistic import FuzzyGapStatistic
 
+# Configuration constants
+DEFAULT_TEST_SAMPLES_HIDDEN = 30  # Number of samples to use from hidden classes
+DEFAULT_RANDOM_SEED = 42
+DEFAULT_TRAIN_RATIO = 0.8
+
 
 def load_iris_dataset() -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """Load Iris dataset from sklearn"""
@@ -75,8 +80,9 @@ def load_haberman_dataset() -> Tuple[np.ndarray, np.ndarray, List[str]]:
         dataset = fetch_openml(name='haberman', version=1, as_frame=False)
         X = dataset.data
         y = dataset.target.astype(int) - 1  # Convert to 0-indexed
-    except Exception:
-        # Create synthetic Haberman-like data (2 classes, 3 features)
+    except Exception as e:
+        # Fallback: Create synthetic Haberman-like data (2 classes, 3 features)
+        # This allows the experiment to run without network access
         np.random.seed(42)
         n_per_class = 150
         X = np.vstack([
@@ -133,7 +139,7 @@ def create_incomplete_fod_experiment(X: np.ndarray,
             test_indices.extend(cls_indices[n_train:])
         else:
             # Hidden class: all samples go to test set
-            n_test = min(30, len(cls_indices))  # Use up to 30 samples
+            n_test = min(DEFAULT_TEST_SAMPLES_HIDDEN, len(cls_indices))
             test_indices.extend(cls_indices[:n_test])
     
     return {

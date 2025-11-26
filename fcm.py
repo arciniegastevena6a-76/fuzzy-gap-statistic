@@ -5,6 +5,10 @@ With convergence checking and robustness improvements
 
 import numpy as np
 
+# Numerical constants
+DISTANCE_MIN_VALUE = 1e-10  # Minimum value to avoid division by zero
+DEGENERATE_CLUSTER_THRESHOLD = 1e-6  # Threshold for detecting empty clusters
+
 
 class FuzzyCMeans:
     """
@@ -60,7 +64,7 @@ class FuzzyCMeans:
         um = u ** self.m
         denominator = np.sum(um.T, axis=1, keepdims=True)
         # Avoid division by zero (degenerate clusters)
-        denominator = np.maximum(denominator, 1e-10)
+        denominator = np.maximum(denominator, DISTANCE_MIN_VALUE)
         centers = (um.T @ X) / denominator
         return centers
 
@@ -74,7 +78,7 @@ class FuzzyCMeans:
         for i in range(n_samples):
             for j in range(self.n_clusters):
                 distances = np.linalg.norm(X[i] - centers, axis=1)
-                distances[distances == 0] = 1e-10  # Avoid division by zero
+                distances[distances == 0] = DISTANCE_MIN_VALUE  # Avoid division by zero
 
                 u[i, j] = 1.0 / np.sum((distances[j] / distances) ** (2.0 / (self.m - 1)))
 
@@ -99,7 +103,7 @@ class FuzzyCMeans:
             True if clusters are degenerate
         """
         cluster_membership = np.sum(u, axis=0)
-        return np.any(cluster_membership < 1e-6)
+        return np.any(cluster_membership < DEGENERATE_CLUSTER_THRESHOLD)
 
     def fit(self, X: np.ndarray):
         """

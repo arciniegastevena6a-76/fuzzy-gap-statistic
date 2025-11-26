@@ -7,6 +7,11 @@ Generalized Basic Probability Assignment (GBPA) generation module
 import numpy as np
 from typing import Dict, Tuple, Optional, List
 
+# Numerical tolerance constants
+GCR_COMPLETE_CONFLICT_TOLERANCE = 1e-10  # Tolerance for K=1 check in GCR (9-1 document formula 14)
+MIN_GBPA_SUM = 1e-10  # Minimum sum to avoid division by zero
+DEGENERATE_CLUSTER_THRESHOLD = 1e-6  # Threshold for detecting degenerate clusters
+
 
 class GBPAGenerator:
     """
@@ -214,7 +219,7 @@ class GBPAGenerator:
         # 完全冲突 [公式(5)] - 9-1 document formula (14)
         # m(Φ) = 1 if and only if K = 1
         # Use stricter tolerance for numerical precision
-        if K >= 1.0 - 1e-10:
+        if K >= 1.0 - GCR_COMPLETE_CONFLICT_TOLERANCE:
             combined['empty'] = 1.0
             return combined
 

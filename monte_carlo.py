@@ -38,6 +38,23 @@ class MonteCarloSampling:
         self.random_seed = seed
         self._rng = np.random.RandomState(seed)
 
+    def _generate_uniform_samples(self, mins: np.ndarray, maxs: np.ndarray, 
+                                   size: tuple) -> np.ndarray:
+        """
+        Generate uniform samples using the appropriate random generator
+        
+        Args:
+            mins: Minimum values for each feature
+            maxs: Maximum values for each feature
+            size: Output shape (n_samples, n_features)
+            
+        Returns:
+            sampled_data: Uniformly sampled data
+        """
+        if self._rng is not None:
+            return self._rng.uniform(low=mins, high=maxs, size=size)
+        return np.random.uniform(low=mins, high=maxs, size=size)
+
     def sample_uniform(self, data: np.ndarray) -> np.ndarray:
         """
         Sample uniformly from the bounding box of the data
@@ -58,18 +75,5 @@ class MonteCarloSampling:
         mins = np.min(data, axis=0)
         maxs = np.max(data, axis=0)
 
-        # Sample uniformly using the random number generator
-        if self._rng is not None:
-            sampled_data = self._rng.uniform(
-                low=mins,
-                high=maxs,
-                size=(n_samples, n_features)
-            )
-        else:
-            sampled_data = np.random.uniform(
-                low=mins,
-                high=maxs,
-                size=(n_samples, n_features)
-            )
-
-        return sampled_data
+        # Sample uniformly using the appropriate random generator
+        return self._generate_uniform_samples(mins, maxs, (n_samples, n_features))
