@@ -143,19 +143,23 @@ class GBPAGenerator:
             gbpa[multi_subset] = memberships[cls2]
 
         elif len(sorted_classes) >= 3:
-            # 与三个或更多类别相交 - 规则③
-            cls1, cls2, cls3 = sorted_classes[0], sorted_classes[1], sorted_classes[2]
-
+            # 与三个或更多类别相交 - 规则②③
+            # According to 9-2 document Section 2.2:
+            # - Highest ordinate → single subset proposition GBPA
+            # - Second highest → binary multi-subset proposition GBPA
+            # - Third highest → ternary multi-subset proposition GBPA
+            # - Continue for more intersections
+            
             # 最高点 → 单子集
-            gbpa[frozenset([cls1])] = memberships[cls1]
-
-            # 次高点 → 二元多子集
-            multi_subset_2 = frozenset([cls1, cls2])
-            gbpa[multi_subset_2] = memberships[cls2]
-
-            # 第三高点 → 三元多子集
-            multi_subset_3 = frozenset(sorted_classes[:3])
-            gbpa[multi_subset_3] = memberships[cls3]
+            gbpa[frozenset([sorted_classes[0]])] = memberships[sorted_classes[0]]
+            
+            # 处理所有相交的类别，生成累积的多子集命题
+            # Process all intersecting classes to generate cumulative multi-subset propositions
+            for i in range(1, len(sorted_classes)):
+                # 第i+1高点 → (i+1)元多子集命题
+                # The (i+1)th highest point → (i+1)-element multi-subset proposition
+                multi_subset = frozenset(sorted_classes[:i+1])
+                gbpa[multi_subset] = memberships[sorted_classes[i]]
 
         # Step 4: 规则④ - 归一化或生成m(Φ)
         total_support = sum(gbpa.values())
@@ -207,8 +211,10 @@ class GBPAGenerator:
                 if len(B & C) == 0:  # B∩C = Φ
                     K += m1[B] * m2[C]
 
-        # 完全冲突 [公式(5)]
-        if K >= 0.9999:
+        # 完全冲突 [公式(5)] - 9-1 document formula (14)
+        # m(Φ) = 1 if and only if K = 1
+        # Use stricter tolerance for numerical precision
+        if K >= 1.0 - 1e-10:
             combined['empty'] = 1.0
             return combined
 

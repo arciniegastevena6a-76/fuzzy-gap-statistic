@@ -51,8 +51,10 @@ def example_iris_incomplete_fod():
     test_indices = []
 
     # 论文方法：
-    # (1) setosa和virginica各选40个作为训练集（建立命题表示模型）
-    # (2) versicolor选30个 + setosa和virginica各剩余10个 = 50个测试集
+    # According to paper: 
+    # "In setosa and virginia, 40 samples were randomly selected as the training set."
+    # "Randomly select 30 samples from versicolor, plus the remaining 10 samples 
+    #  from setosa and virginia, a total of 50 samples as the test set."
 
     for cls in range(3):
         cls_indices = np.where(target == cls)[0]
@@ -61,9 +63,9 @@ def example_iris_incomplete_fod():
         if cls in known_classes:
             # setosa (0) 和 virginica (2): 40个训练，10个测试
             train_indices.extend(cls_indices[:40])
-            test_indices.extend(cls_indices[40:])
+            test_indices.extend(cls_indices[40:])  # 10 samples each
         else:
-            # versicolor (1): 0个训练，30个测试
+            # versicolor (1): 0个训练，30个测试（按论文）
             test_indices.extend(cls_indices[:30])
 
     # 提取数据
@@ -90,7 +92,7 @@ def example_iris_incomplete_fod():
     print("Key Correction: Using attribute-level average m(Φ) for FOD judgment")
     print("=" * 70)
 
-    fgs = FuzzyGapStatistic(critical_value=0.5, max_iterations=100)
+    fgs = FuzzyGapStatistic(critical_value=0.5, max_iterations=100, random_seed=42)
 
     results = fgs.fit(
         test_data=test_data,

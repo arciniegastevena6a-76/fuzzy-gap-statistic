@@ -1,5 +1,6 @@
 """
 Fuzzy C-Means clustering implementation
+With convergence checking and robustness improvements
 """
 
 import numpy as np
@@ -8,10 +9,16 @@ import numpy as np
 class FuzzyCMeans:
     """
     Fuzzy C-Means clustering algorithm
+    
+    According to paper Section 2.3 and Eq.(7):
+    J_m = Σ_i Σ_j (u_ij)^m * d
+    
+    With convergence checking and degenerate cluster handling.
     """
 
     def __init__(self, n_clusters: int = 3, m: float = 2.0,
-                 max_iter: int = 100, error: float = 1e-5):
+                 max_iter: int = 100, error: float = 1e-5,
+                 random_seed: int = None):
         """
         Initialize FCM
 
@@ -20,21 +27,29 @@ class FuzzyCMeans:
             m: Fuzziness parameter (default 2.0)
             max_iter: Maximum iterations
             error: Convergence threshold
+            random_seed: Random seed for reproducibility
         """
         self.n_clusters = n_clusters
         self.m = m
         self.max_iter = max_iter
         self.error = error
+        self.random_seed = random_seed
 
         self.centers = None
         self.u = None  # Membership matrix
         self.objective_value = None
+        self.converged = False
+        self.n_iterations = 0
 
     def _initialize_membership(self, n_samples: int) -> np.ndarray:
         """
         Initialize membership matrix randomly
         """
-        u = np.random.rand(n_samples, self.n_clusters)
+        if self.random_seed is not None:
+            rng = np.random.RandomState(self.random_seed)
+            u = rng.rand(n_samples, self.n_clusters)
+        else:
+            u = np.random.rand(n_samples, self.n_clusters)
         u = u / np.sum(u, axis=1, keepdims=True)
         return u
 
@@ -43,7 +58,10 @@ class FuzzyCMeans:
         Update cluster centers
         """
         um = u ** self.m
-        centers = (um.T @ X) / np.sum(um.T, axis=1, keepdims=True)
+        denominator = np.sum(um.T, axis=1, keepdims=True)
+        # Avoid division by zero (degenerate clusters)
+        denominator = np.maximum(denominator, 1e-10)
+        centers = (um.T @ X) / denominator
         return centers
 
     def _update_membership(self, X: np.ndarray, centers: np.ndarray) -> np.ndarray:
@@ -66,11 +84,22 @@ class FuzzyCMeans:
                             centers: np.ndarray) -> float:
         """
         Calculate objective function value
+        Paper Eq.(7): J_m = Σ_i Σ_j (u_ij)^m * d
         """
         um = u ** self.m
         distances = np.linalg.norm(X[:, np.newaxis] - centers, axis=2)
         obj = np.sum(um * (distances ** 2))
         return obj
+
+    def _check_degenerate_clusters(self, u: np.ndarray) -> bool:
+        """
+        Check if any cluster has become degenerate (no samples assigned)
+        
+        Returns:
+            True if clusters are degenerate
+        """
+        cluster_membership = np.sum(u, axis=0)
+        return np.any(cluster_membership < 1e-6)
 
     def fit(self, X: np.ndarray):
         """
@@ -83,6 +112,8 @@ class FuzzyCMeans:
 
         # Initialize membership matrix
         self.u = self._initialize_membership(n_samples)
+        self.converged = False
+        self.n_iterations = 0
 
         for iteration in range(self.max_iter):
             u_old = self.u.copy()
@@ -93,9 +124,18 @@ class FuzzyCMeans:
             # Update membership
             self.u = self._update_membership(X, self.centers)
 
+            self.n_iterations = iteration + 1
+
             # Check convergence
-            if np.linalg.norm(self.u - u_old) < self.error:
+            diff = np.linalg.norm(self.u - u_old)
+            if diff < self.error:
+                self.converged = True
                 break
+
+            # Check for degenerate clusters
+            if self._check_degenerate_clusters(self.u):
+                # Reinitialize if clusters degenerate
+                self.u = self._initialize_membership(n_samples)
 
         # Calculate final objective value
         self.objective_value = self._calculate_objective(X, self.u, self.centers)
@@ -113,3 +153,17 @@ class FuzzyCMeans:
         u = self._update_membership(X, self.centers)
         labels = np.argmax(u, axis=1)
         return labels
+    
+    def get_membership(self, X: np.ndarray = None) -> np.ndarray:
+        """
+        Get membership matrix
+        
+        Args:
+            X: Input data (if None, returns membership from fit)
+            
+        Returns:
+            u: Membership matrix (n_samples, n_clusters)
+        """
+        if X is None:
+            return self.u
+        return self._update_membership(X, self.centers)

@@ -5,7 +5,7 @@ Main module for Fuzzy Gap Statistic algorithm
 """
 
 import numpy as np
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List
 from gbpa import GBPAGenerator
 
 
@@ -15,16 +15,19 @@ class FuzzyGapStatistic:
     论文 Section 3: Proposed Method
     """
 
-    def __init__(self, critical_value: float = 0.5, max_iterations: int = 100):
+    def __init__(self, critical_value: float = 0.5, max_iterations: int = 100,
+                 random_seed: int = 42):
         """
         Initialize Fuzzy Gap Statistic
 
         Args:
             critical_value: Threshold for incomplete FOD (论文 p = 0.5)
             max_iterations: Maximum iterations for FCM
+            random_seed: Random seed for reproducibility
         """
         self.critical_value = critical_value
         self.max_iterations = max_iterations
+        self.random_seed = random_seed
         self.gbpa_generator = GBPAGenerator()
         self.fcm = None
         self.gap_calc = None
@@ -118,17 +121,27 @@ class FuzzyGapStatistic:
                                      n_samples: int = 20) -> list:
         """
         Step 2.1: Perform Monte Carlo sampling
-        论文：通常采样 20 次
+        论文：通常采样 20 次 (B=20 in paper)
+        
+        Args:
+            data: Original test data
+            n_samples: Number of Monte Carlo samples (default 20)
+            
+        Returns:
+            sampled_data_list: List of sampled datasets
         """
         # 需要导入utils模块
         from utils import standardize_data
         data_std = standardize_data(data)
 
         from monte_carlo import MonteCarloSampling
-        mc_sampler = MonteCarloSampling()
+        mc_sampler = MonteCarloSampling(random_seed=self.random_seed)
         sampled_data_list = []
 
-        for _ in range(n_samples):
+        for i in range(n_samples):
+            # Use different seed for each sample but reproducible
+            if self.random_seed is not None:
+                mc_sampler.set_seed(self.random_seed + i)
             sampled = mc_sampler.sample_uniform(data_std)
             sampled_data_list.append(sampled)
 
@@ -140,6 +153,15 @@ class FuzzyGapStatistic:
         """
         Step 2.2 - 2.3: Apply FCM and FGS
         论文 Algorithm 2: FGS
+        
+        Args:
+            original_data: Original test data
+            sampled_data_list: List of Monte Carlo sampled data
+            max_clusters: Maximum number of clusters to test
+            
+        Returns:
+            optimal_k: Optimal number of clusters
+            fgs_results: Dictionary of FGS values for each k
         """
         from utils import standardize_data
         from fcm import FuzzyCMeans
@@ -157,8 +179,11 @@ class FuzzyGapStatistic:
             log_jmk_star_list = []
 
             # Run FCM on each Monte Carlo sample
-            for sampled_data in sampled_data_list:
-                fcm_star = FuzzyCMeans(n_clusters=k, max_iter=self.max_iterations)
+            for idx, sampled_data in enumerate(sampled_data_list):
+                # Use different seed for each sample
+                seed = self.random_seed + k * 100 + idx if self.random_seed else None
+                fcm_star = FuzzyCMeans(n_clusters=k, max_iter=self.max_iterations,
+                                       random_seed=seed)
                 fcm_star.fit(sampled_data)
 
                 obj_value = max(fcm_star.objective_value, 1e-10)
@@ -166,8 +191,11 @@ class FuzzyGapStatistic:
                 log_jmk_star_list.append(log_jmk_star)
 
             # Run FCM on original data (standardized)
-            fcm_original = FuzzyCMeans(n_clusters=k, max_iter=self.max_iterations)
+            seed = self.random_seed + k * 1000 if self.random_seed else None
+            fcm_original = FuzzyCMeans(n_clusters=k, max_iter=self.max_iterations,
+                                       random_seed=seed)
             fcm_original.fit(original_data_std)
+            self.fcm = fcm_original  # Store for later use
             obj_value = max(fcm_original.objective_value, 1e-10)
             log_jmk = np.log(obj_value)
 
@@ -328,12 +356,108 @@ class FuzzyGapStatistic:
         # ===== Step 3: 重新构建FOD并验证 =====
         if n_unknown > 0:
             print("\n" + "=" * 70)
-            print("Step 3: Reconstructing complete FOD")
+            print("Step 3: Reconstructing complete FOD and verifying")
             print("=" * 70)
 
-            print("\n  Note: In practice, you would need to:")
-            print("  1. Use clustering results to assign pseudo-labels to unknown samples")
-            print("  2. Rebuild TFN models with all classes")
-            print("  3. Regenerate GBPA and verify m̄(∅) < p")
+            # Step 3.1: Assign pseudo-labels to unknown samples using FCM
+            step3_results = self.verify_reconstruction(
+                test_data=test_data,
+                train_data=train_data,
+                train_labels=train_labels,
+                optimal_k=optimal_k,
+                n_known_targets=n_known_targets
+            )
+            
+            results['step3_verification'] = step3_results
+            
+            print(f"\n=== Step 3 Verification Results ===")
+            print(f"  New m̄(∅) after reconstruction: {step3_results['new_m_empty_mean']:.4f}")
+            print(f"  Critical value p: {self.critical_value}")
+            print(f"  FOD now complete: {step3_results['fod_now_complete']}")
+            
+            if step3_results['fod_now_complete']:
+                print(f"\n✓ FOD reconstruction verified! m̄(∅) < p")
+            else:
+                print(f"\n⚠ FOD may still be incomplete. Consider more iterations.")
 
+        return results
+
+    def verify_reconstruction(self, test_data: np.ndarray,
+                             train_data: np.ndarray,
+                             train_labels: np.ndarray,
+                             optimal_k: int,
+                             n_known_targets: int) -> Dict:
+        """
+        Step 3: Verify FOD reconstruction
+        论文 Step 3: Judge again whether the FOD is complete
+        
+        After determining the number of targets in the incomplete FOD,
+        it needs to be reconstructed. By repeating step 1, the new 
+        triangular fuzzy number models can be established. Then generate 
+        the GBPAs again. Finally calculate the m̄(∅) again.
+        
+        Args:
+            test_data: Test dataset
+            train_data: Training dataset (known classes)
+            train_labels: Training labels
+            optimal_k: Optimal number of clusters from FGS
+            n_known_targets: Number of known targets
+            
+        Returns:
+            verification_results: Dictionary with verification info
+        """
+        from utils import standardize_data
+        from fcm import FuzzyCMeans
+        
+        results = {}
+        
+        # Step 3.1: Use FCM to cluster test data with optimal k
+        test_data_std = standardize_data(test_data)
+        fcm = FuzzyCMeans(n_clusters=optimal_k, max_iter=self.max_iterations,
+                         random_seed=self.random_seed)
+        fcm.fit(test_data_std)
+        
+        # Get cluster assignments (pseudo-labels)
+        pseudo_labels = fcm.predict(test_data_std)
+        
+        # Step 3.2: Create augmented training data
+        # Combine known data with pseudo-labeled unknown data
+        # Map pseudo-labels to new class indices starting after known classes
+        known_classes = np.unique(train_labels)
+        n_known = len(known_classes)
+        
+        # Create mapping: assign new class indices to clusters
+        # that don't correspond to known classes
+        augmented_train_data = list(train_data)
+        augmented_train_labels = list(train_labels)
+        
+        # Add test data with pseudo-labels as new classes
+        for i, sample in enumerate(test_data):
+            cluster_id = pseudo_labels[i]
+            # Assign pseudo-label: known classes + cluster_id
+            # This creates new class labels for unknown clusters
+            new_label = n_known + cluster_id
+            augmented_train_data.append(sample)
+            augmented_train_labels.append(new_label)
+        
+        augmented_train_data = np.array(augmented_train_data)
+        augmented_train_labels = np.array(augmented_train_labels)
+        
+        # Step 3.3: Rebuild TFN models with all classes
+        new_gbpa_generator = GBPAGenerator()
+        new_gbpa_generator.build_tfn_models(augmented_train_data, augmented_train_labels)
+        
+        # Step 3.4: Regenerate GBPA for test data
+        gbpa_list, m_empty_combined_array, m_empty_mean_attribute_array, _ = \
+            new_gbpa_generator.generate(test_data)
+        
+        # Step 3.5: Calculate new m̄(∅)
+        new_m_empty_mean = np.mean(m_empty_mean_attribute_array)
+        
+        results['new_m_empty_mean'] = new_m_empty_mean
+        results['fod_now_complete'] = new_m_empty_mean <= self.critical_value
+        results['pseudo_labels'] = pseudo_labels
+        results['augmented_classes'] = np.unique(augmented_train_labels)
+        results['gbpa_list'] = gbpa_list
+        
         return results
